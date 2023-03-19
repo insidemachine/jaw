@@ -1,0 +1,81 @@
+const express = require('express');
+const router = express.Router();
+const winston = require('winston');
+
+const JobModel = require('../models/job');
+const { authenticate } = require('../middlewares/auth');
+
+const logger = winston.createLogger({
+  level: 'error',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'error.log' })
+  ]
+});
+
+router.get('/jobs', authenticate, async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+
+  const startIndex = (page - 1) * limit;
+  const endIndex = page * limit;
+
+  try {
+    const jobs = await JobModel.find({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .skip(startIndex)
+      .limit(limit);
+
+    res.json({
+      totalCount: jobs.length,
+      totalPages: Math.ceil(jobs.length / limit),
+      currentPage: page,
+      jobs: jobs.slice(startIndex, endIndex)
+    });
+  } catch (error) {
+    logger.error(error.message, error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/jobs', authenticate, async (req, res) => {
+  const { title, description, location } = req.body;
+
+  if (!title || !description || !location) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const job = new JobModel({
+    userId: req.userId,
+    title,
+    description,
+    location
+  });
+
+  try {
+    await job.save();
+    res.json({ message: 'Job created successfully' });
+  } catch (error) {
+    logger.error(error.message, error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/jobs/:id', authenticate, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const job = await JobModel.findOne({ _id: id, userId: req.userId });
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    await job.delete();
+    res.json({ message: 'Job deleted successfully' });
+  } catch (error) {
+    logger.error(error.message, error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+module.exports = router;
+```
